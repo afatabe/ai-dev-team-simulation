@@ -14,6 +14,7 @@ export interface Task {
   estimatedHours?: number
   createdAt: string
   updatedAt: string
+  dependsOn?: string[]
 }
 
 export interface UpdateTaskInput {
@@ -25,4 +26,5 @@ export interface UpdateTaskInput {
   storyPoints?: number
   estimatedHours?: number
   order?: number
+  dependsOn?: string[]
 }
