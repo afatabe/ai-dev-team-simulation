@@ -4,6 +4,8 @@ export interface UseTableOptions<T> {
   data: T[]
   initialSortKey?: keyof T
   initialSortOrder?: 'asc' | 'desc'
+  filters?: Record<string, string | null | undefined>
+  onFilterChange?: (filters: Record<string, string | null | undefined>) => void
 }
 
 export interface UseTableReturn<T> {
@@ -11,14 +13,16 @@ export interface UseTableReturn<T> {
   sortKey: keyof T | null
   sortOrder: 'asc' | 'desc'
   filterValue: string
+  filters: Record<string, string | null | undefined>
   handleSort: (key: keyof T) => void
   handleFilter: (value: string) => void
+  setFilter: (key: string, value: string | null) => void
   clearFilters: () => void
 }
 
 /**
- * Custom hook for managing table state with client-side sorting and filtering.
- * Provides a simple API for sorting by column and filtering across all columns.
+ * Custom hook for managing table state with client-side sorting and advanced filtering.
+ * Provides a simple API for sorting by column, text filtering, and advanced field-based filters.
  *
  * @template T - The type of data in the table
  * @param options - Configuration for the hook
@@ -26,9 +30,21 @@ export interface UseTableReturn<T> {
  *
  * @example
  * ```tsx
- * const { sortedAndFilteredData, sortKey, sortOrder, handleSort, handleFilter } = useTable({
+ * // Basic usage with sorting and text filtering
+ * const { sortedAndFilteredData, handleSort, handleFilter } = useTable({
  *   data: users,
  *   initialSortKey: 'name',
+ * })
+ *
+ * // Advanced usage with URL-synced filters
+ * const searchParams = useSearch()
+ * const { setFilter, filters } = useTable({
+ *   data: tasks,
+ *   filters: {
+ *     status: searchParams.status,
+ *     assignee: searchParams.assignee,
+ *   },
+ *   onFilterChange: (filters) => navigate({ search: filters })
  * })
  * ```
  */
@@ -36,10 +52,13 @@ export function useTable<T extends Record<string, any>>({
   data,
   initialSortKey,
   initialSortOrder = 'asc',
+  filters = {},
+  onFilterChange,
 }: UseTableOptions<T>): UseTableReturn<T> {
   const [sortKey, setSortKey] = useState<keyof T | null>(initialSortKey ?? null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialSortOrder)
   const [filterValue, setFilterValue] = useState('')
+  const [appliedFilters, setAppliedFilters] = useState<Record<string, string | null | undefined>>(filters)
 
   const handleSort = useCallback((key: keyof T) => {
     setSortKey((prevKey) => {
@@ -58,14 +77,42 @@ export function useTable<T extends Record<string, any>>({
     setFilterValue(value)
   }, [])
 
+  const setFilter = useCallback(
+    (key: string, value: string | null) => {
+      const updatedFilters = {
+        ...appliedFilters,
+        [key]: value || undefined,
+      }
+      setAppliedFilters(updatedFilters)
+      onFilterChange?.(updatedFilters)
+    },
+    [appliedFilters, onFilterChange]
+  )
+
   const clearFilters = useCallback(() => {
     setFilterValue('')
-  }, [])
+    const clearedFilters: Record<string, undefined> = {}
+    Object.keys(appliedFilters).forEach((key) => {
+      clearedFilters[key] = undefined
+    })
+    setAppliedFilters(clearedFilters)
+    onFilterChange?.(clearedFilters)
+  }, [appliedFilters, onFilterChange])
 
   const sortedAndFilteredData = useMemo(() => {
     let result = [...data]
 
-    // Apply filtering
+    // Apply advanced filters
+    Object.entries(appliedFilters).forEach(([key, value]) => {
+      if (value) {
+        result = result.filter((item) => {
+          const itemValue = item[key]
+          return String(itemValue).toLowerCase() === String(value).toLowerCase()
+        })
+      }
+    })
+
+    // Apply text filtering
     if (filterValue) {
       const lowerFilter = filterValue.toLowerCase()
       result = result.filter((item) =>
@@ -105,15 +152,17 @@ export function useTable<T extends Record<string, any>>({
     }
 
     return result
-  }, [data, filterValue, sortKey, sortOrder])
+  }, [data, filterValue, sortKey, sortOrder, appliedFilters])
 
   return {
     sortedAndFilteredData,
     sortKey,
     sortOrder,
     filterValue,
+    filters: appliedFilters,
     handleSort,
     handleFilter,
+    setFilter,
     clearFilters,
   }
 }
